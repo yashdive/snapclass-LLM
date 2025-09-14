@@ -1,0 +1,24 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama  # persist models so you don’t redownload
+    restart: unless-stopped
+
+  fastapi:
+    build: ./server
+    container_name: fastapi_app
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./server:/app   # live code reload
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434  # talk to the model inside the network
+
+volumes:
+  ollama_data:
