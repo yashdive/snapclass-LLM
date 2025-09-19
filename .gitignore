@@ -58,3 +58,4 @@ docker-compose.override.yml
 
 # Other
 __MACOSX/
+node_modules

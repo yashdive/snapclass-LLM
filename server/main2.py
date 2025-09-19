@@ -1,5 +1,7 @@
-# server/main.py
-from fastapi import FastAPI, HTTPException
+# server.py
+
+
+from fastapi import FastAPI
 from pydantic import BaseModel
 import requests
 import PyPDF2
@@ -7,8 +9,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 import chromadb
 
-app = FastAPI(title="SnapClass LLM API")
-
+app = FastAPI()
 
 
 class Query(BaseModel):
@@ -19,6 +20,7 @@ MODEL_NAME = "llama3.2:3b"
 PDF_PATH = "SnapManual.pdf"
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
+
 
 def extract_pdf_text(file_path):
     text = ""
@@ -37,12 +39,12 @@ def create_chunks(text):
 
 def build_prompt(context: str, question: str):
     return f"""You are Snap Assistant.
-Use the following manual context to answer:
+    Use the following manual context to answer:
 
-{context}
+    {context}
 
-Question: {question}
-Answer:"""
+    Question: {question}
+    Answer:"""
 
 # -------------------------
 # RAG Setup
@@ -71,25 +73,37 @@ for i, chunk in enumerate(chunks):
 
 print("RAG setup complete ✅")
 
+# -------------------------
+# FastAPI endpoints
+# -------------------------
+@app.post("/ask")
+async def ask_model(req: Query):
+    # 1️⃣ Embed user query
+    embedding = embedder.encode(req.prompt).tolist()
+
+    # 2️⃣ Retrieve top relevant chunks
+    results = collection.query(
+        query_embeddings=[embedding],
+        n_results=3
+    )
+    context = "\n\n".join(results["documents"][0])
+
+    # 3️⃣ Build prompt for LLM
+    prompt = build_prompt(context, req.prompt)
+
+    # 4️⃣ Call Ollama HTTP API
+    payload = {
+        "model": MODEL_NAME,
+        "prompt": prompt,
+        "temperature": 0.2,
+        "max_tokens": 500,
+        "stream": False
+    }
+    response = requests.post(OLLAMA_API_URL, json=payload)
+    result = response.json()
+    answer = result.get("response", "")
+    return {"answer": answer}
 
 @app.get("/")
 def root():
-    return {"message": "FastAPI + Ollama is running 🚀"}
-
-@app.post("/ask")
-def ask_model(q: Query):
-    payload = {
-        "model": MODEL_NAME,
-        "prompt": q.prompt,
-        "temperature": 0.2,
-        "max_tokens": 500,
-        "stream": False,
-    }
-    try:
-        r = requests.post(OLLAMA_API_URL, json=payload, timeout=120)
-        r.raise_for_status()
-        data = r.json()
-    except requests.RequestException as e:
-        raise HTTPException(status_code=502, detail=f"Ollama request failed: {e}")
-    return {"answer": data.get("response", "")}
-
+    return {"message": "FastAPI + Llama3.2:3b is running 🚀"}
