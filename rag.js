@@ -4,6 +4,8 @@ import { OllamaEmbeddings, ChatOllama } from "@langchain/ollama";
 import { MemoryVectorStore } from "langchain/vectorstores/memory";
 import { PromptTemplate } from "@langchain/core/prompts";
 
+const OLLAMA_URL = process.env.OLLAMA_URL || "http://127.0.0.1:11434";
+
 export const loadAndSplitTheDocs = async (file_path) => {
   // load the uploaded file data
   const loader = new PDFLoader(file_path);
@@ -18,7 +20,10 @@ export const loadAndSplitTheDocs = async (file_path) => {
 };
 
 export const vectorSaveAndSearch = async (splits,question) => {
-    const embeddings = new OllamaEmbeddings();
+  const embeddings = new OllamaEmbeddings({
+    model: process.env.EMBED_MODEL || "nomic-embed-text:latest", 
+    baseUrl: OLLAMA_URL,
+  });
     const vectorStore = await MemoryVectorStore.fromDocuments(
         splits,
         embeddings
@@ -55,10 +60,10 @@ Answer the question based on the above context: {question}
 
 export const generateOutput = async (prompt) =>
 {
-    const ollamaLlm = new ChatOllama({
-        baseUrl: "http://localhost:11434", // Default value
-        model: "llama3.2", // Default value
-    });
+  const llm = new Ollama({
+    model: process.env.OLLAMA_MODEL || "llama3.2:3b",
+    baseUrl: OLLAMA_URL,
+  });
 
     const response = await ollamaLlm.invoke(prompt);
     return response;
@@ -207,6 +212,15 @@ export async function initRag(opts = {}) {
     await store.addDocuments(docs);
     return docs.length;
   }
+
+  export const askWithDocs = async (question, docs, k = 4) => {
+    if (!question?.trim()) return "";
+    const { topKText } = await vectorSaveAndSearch(docs, question, k);
+    if (!topKText?.trim()) return "I couldn't find relevant context in the document.";
+    const prompt = await generatePrompt(question, topKText);
+    const out = await generateOutput(prompt);
+    return typeof out === "string" ? out : (out?.content ?? out?.response ?? "");
+  };
   
   /** Ask a question using retrieved context, returning a concise answer string */
   export async function ask(question, k = 4, opts = {}) {
